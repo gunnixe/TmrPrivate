@@ -3004,11 +3004,11 @@ void VerilogWriter::printMemCtrlRAMs() {
             continue;
         if (R->getScope() == RAM::LOCAL)
             continue;
-        printRamInstance(R);
+        printRamInstance(R, true);
     }
 }
 
-void VerilogWriter::printRamInstance(RAM *R) {
+void VerilogWriter::printRamInstance(RAM *R, bool memCtrlInstance) {
 
     // there can be multiple instances of the RAM
     // if it is used by parallel threads
@@ -3036,6 +3036,7 @@ void VerilogWriter::printRamInstance(RAM *R) {
 
         Out << "\n";
 
+		// FIXME - TMR for global scope ram
         if (R->getScope() == RAM::GLOBAL) {
             // this is a global RAM
 
@@ -3068,8 +3069,34 @@ void VerilogWriter::printRamInstance(RAM *R) {
         limitString(comment, 200);
         Out << "// " << comment << '\n';
 
+		std::string address_a = "_address_a";
+		std::string address_b = "_address_b";
+		std::string write_enable_a = "_enable_a";
+		std::string write_enable_b = "_enable_b";
+		std::string in_a = "_in_a";
+		std::string in_b = "_in_a";
+		std::string byteena_a = "_byteena_a";
+		std::string byteena_b = "_byteena_b";
+		std::string out_a = "_out_a";
+		std::string out_b = "_out_b";
+		if (LEGUP_CONFIG->getParameterInt("TMR") && !memCtrlInstance) {
+			address_a      += "_v" + currReplica;
+			address_b      += "_v" + currReplica;
+			write_enable_a += "_v" + currReplica;
+			write_enable_b += "_v" + currReplica;
+			in_a           += "_v" + currReplica;
+			in_b           += "_v" + currReplica;
+			byteena_a      += "_v" + currReplica;
+			byteena_b      += "_v" + currReplica;
+			out_a          += "_r" + currReplica;
+			out_b          += "_r" + currReplica;
+		}
+
         std::string type = (R->isROM()) ? "rom" : "ram";
-        Out << type << "_dual_port " << name << " ("
+        Out << type << "_dual_port " << name;
+		if (LEGUP_CONFIG->getParameterInt("TMR") && !memCtrlInstance)
+			Out << "_r" + currReplica;
+		Out << " ("
             << "\n"
             << "\t"
             << ".clk( clk ),"
@@ -3078,31 +3105,31 @@ void VerilogWriter::printRamInstance(RAM *R) {
             << ".clken( !memory_controller_waitrequest ),"
             << "\n"
             << "\t"
-            << ".address_a( " << name << "_address_a ),"
+            << ".address_a( " << name << address_a << " ),"
             << "\n"
             << "\t"
-            << ".address_b( " << name << "_address_b ),"
+            << ".address_b( " << name << address_b << " ),"
             << "\n";
         if (!R->isROM()) {
             Out << "\t"
-                << ".wren_a( " << name << "_write_enable_a ),"
+                << ".wren_a( " << name << write_enable_a << " ),"
                 << "\n"
                 << "\t"
-                << ".wren_b( " << name << "_write_enable_b ),"
+                << ".wren_b( " << name << write_enable_b << " ),"
                 << "\n"
                 << "\t"
-                << ".data_a( " << name << "_in_a ),"
+                << ".data_a( " << name << in_a << " ),"
                 << "\n"
                 << "\t"
-                << ".data_b( " << name << "_in_b ),"
+                << ".data_b( " << name << in_b << " ),"
                 << "\n";
             if (alloc->usesGenericRAMs()) {
                 if (R->isStruct()) { // if R is Struct
                     Out << "\t"
-                        << ".byteena_a( " << name << "_byteena_a ),"
+                        << ".byteena_a( " << name << byteena_a << " ),"
                         << "\n";
                     Out << "\t"
-                        << ".byteena_b( " << name << "_byteena_b ),"
+                        << ".byteena_b( " << name << byteena_b << " ),"
                         << "\n";
                 } else {
                     Out << "\t"
@@ -3115,14 +3142,16 @@ void VerilogWriter::printRamInstance(RAM *R) {
             }
         }
         Out << "\t"
-            << ".q_a( " << name << "_out_a )"
+            << ".q_a( " << name << out_a << " )"
             << ",\n"
             << "\t"
-            << ".q_b( " << name << "_out_b)"
+            << ".q_b( " << name << out_b << " )"
             << "\n"
             << ");\n";
 
         // parameters
+		if (LEGUP_CONFIG->getParameterInt("TMR") && !memCtrlInstance)
+			name += "_r" + currReplica;
         Out << "defparam " << name << ".width_a = " << datawidth << ";\n";
         Out << "defparam " << name << ".width_b = " << datawidth << ";\n";
         Out << "defparam " << name << ".widthad_a = " << addresswidth << ";\n";
@@ -6515,6 +6544,27 @@ void VerilogWriter::printModuleHeader() {
     }
 }
 
+bool VerilogWriter::isLocalMemSignal(const RTLSignal *signal) {
+	for (Allocation::const_ram_iterator i = alloc->ram_begin();
+	        i != alloc->ram_end(); ++i) {
+		const RAM *R = *i;
+		const char* portNames[6] = { "_address_a", "_address_b",
+		                             "_write_enable_a", "_write_enable_b",
+		                             "_in_a", "_in_b" };
+		                             //"_out_a", "_out_b" };
+        std::vector<std::string> ports(portNames, portNames+6);
+        for (std::vector<std::string>::iterator p = ports.begin(), pe =
+                ports.end(); p != pe; ++p) {
+            std::string port = *p;
+			std::string name = R->getName() + port;
+			if (signal->getName() == name)
+				return true;
+		}
+	}
+
+	return false;
+}
+
 void VerilogWriter::printDeclaration(const RTLSignal *signal, bool testBench) {
     std::string type = signal->getType();
     if (!type.empty()) {
@@ -6561,9 +6611,11 @@ void VerilogWriter::printDeclaration(const RTLSignal *signal, bool testBench) {
 		int voterMode = LEGUP_CONFIG->getParameterInt("VOTER_MODE");
 		bool isReg = signal->isReg();
 		bool isBackward = signal->getBackward();
-		bool isRegVoter = ((signal->getName()!="cur_state") && (voterMode==4));
+		bool isRegVoter = (isLocalMemSignal(signal) ||
+		                   (signal->getName()!="cur_state" && voterMode==4));
 
 		if ((signal->getName()=="cur_state") ||
+		    (isLocalMemSignal(signal)) ||
 		    ((voterMode==1) && isReg) ||
 		    ((voterMode==2) && isReg && isBackward) ||
 		    ((voterMode==3) && isBackward) ||
@@ -6618,16 +6670,21 @@ void VerilogWriter::printRTL(const RTLModule *rtl) {
             << " Finish\", ($time-50)/20);\n";
     }
 
-	//FIXME - need TMR
     if (LEGUP_CONFIG->getParameterInt("LOCAL_RAMS")) {
         Out << "// Local Rams\n";
-        for (RTLModule::const_ram_iterator i = rtl->local_ram_begin(),
-                                           e = rtl->local_ram_end();
-             i != e; ++i) {
-            RAM *R = *i;
-            Out << "\n";
-            printRamInstance(R);
-        }
+
+		for (int tmrIter=0; tmrIter<3; tmrIter++) {
+			useReplicaNumberForAllVariables = true;
+			currReplica = utostr(tmrIter);
+        	for (RTLModule::const_ram_iterator i = rtl->local_ram_begin(),
+        	                                   e = rtl->local_ram_end();
+        	     i != e; ++i) {
+        	    RAM *R = *i;
+        	    Out << "\n";
+        	    printRamInstance(R);
+        	}
+			useReplicaNumberForAllVariables = false;
+		}
         Out << "\n";
     }
 
@@ -6643,7 +6700,7 @@ void VerilogWriter::printRTL(const RTLModule *rtl) {
     	if (LEGUP_CONFIG->getParameterInt("TMR")) {
 			RTLSignal *s = *i;
 			useReplicaNumberForAllVariables = true;
-			for(int tmrIter=0; tmrIter<3; tmrIter++) {
+			for (int tmrIter=0; tmrIter<3; tmrIter++) {
 				currReplica = utostr(tmrIter);
 				printSignal(s);
 			}
@@ -7163,7 +7220,7 @@ void VerilogWriter::printSignal(const RTLSignal *signal) {
 void VerilogWriter::printTmrSignal(const RTLSignal *sig, std::string postfix) {
 	std::string type = sig->getType();
 	if (type == "wire" &&
-	    (sig->getNumConditions() != 0 || sig->getNumDrivers() != 0)) {
+	    (sig->getNumConditions() != 0 || sig->getNumDrivers() != 0 || postfix == "_v")) {
 	    Out << "reg ";
 	} else {
 	    Out << type << " ";

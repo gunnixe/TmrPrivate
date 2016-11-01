@@ -48,7 +48,7 @@ public:
     void setRTL(const RTLModule* rtl) { this->rtl = rtl;}
     
     void printSignal(const RTLSignal *signal);
-    void printRamInstance(RAM *R);
+    void printRamInstance(RAM *R, bool memCtrlInstance=false);
     void printSignalConditionForInstruction(const RTLSignal* signal, const Instruction* I);
     void clearStringStreamBuffer() { this->Out.str(""); }
     std::string getStringStreamOut() { return this->Out.str(); }
@@ -59,6 +59,7 @@ public:
 	void printTmrSignal(const RTLSignal *signal, std::string postfix);
 	void printTmrVoter(const std::string sigName, const std::string lo, const std::string hi,
 	        bool isRegVoter=false);
+	bool isLocalMemSignal(const RTLSignal *signal);
     //
     
 private:

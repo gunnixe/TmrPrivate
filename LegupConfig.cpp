@@ -519,7 +519,7 @@ int findMatchingConstraint(std::string FuName,
         }
     }
     // errs() << FuName << " (closest tcl constraint: " << longestMatch
-    //    << ")\n";
+    //    << "=" << finalConstraint << ")\n";
 
     *constraint = finalConstraint;
 

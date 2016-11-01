@@ -115,7 +115,12 @@ unsigned Scheduler::getNumInstructionCycles(Instruction *instr) {
               RAM *ram = alloc->getLocalRamFromInst(instr);
               if (ram && !alloc->isRAMGlobal(ram)) {
                   // local memory
-                  return ram->getLatency(alloc);
+                  if (LEGUP_CONFIG->getParameterInt("TMR")) {
+                      //TMR::add 1 cycle delay for registered voter for memory input ports
+                      return ram->getLatency(alloc)+1;
+                  }
+                  else
+                      return ram->getLatency(alloc);
               } else {
                   // global memory
                   return getGlobalMemLatency();
