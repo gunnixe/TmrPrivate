@@ -3071,10 +3071,10 @@ void VerilogWriter::printRamInstance(RAM *R, bool memCtrlInstance) {
 
 		std::string address_a = "_address_a";
 		std::string address_b = "_address_b";
-		std::string write_enable_a = "_enable_a";
-		std::string write_enable_b = "_enable_b";
+		std::string write_enable_a = "_write_enable_a";
+		std::string write_enable_b = "_write_enable_b";
 		std::string in_a = "_in_a";
-		std::string in_b = "_in_a";
+		std::string in_b = "_in_b";
 		std::string byteena_a = "_byteena_a";
 		std::string byteena_b = "_byteena_b";
 		std::string out_a = "_out_a";
@@ -6550,7 +6550,7 @@ bool VerilogWriter::isLocalMemSignal(const RTLSignal *signal) {
 		const RAM *R = *i;
 		const char* portNames[6] = { "_address_a", "_address_b",
 		                             "_write_enable_a", "_write_enable_b",
-		                             "_in_a", "_in_b" };
+		                             "_in_a", "_in_b" };//,
 		                             //"_out_a", "_out_b" };
         std::vector<std::string> ports(portNames, portNames+6);
         for (std::vector<std::string>::iterator p = ports.begin(), pe =
@@ -6611,7 +6611,8 @@ void VerilogWriter::printDeclaration(const RTLSignal *signal, bool testBench) {
 		int voterMode = LEGUP_CONFIG->getParameterInt("VOTER_MODE");
 		bool isReg = signal->isReg();
 		bool isBackward = signal->getBackward();
-		bool isRegVoter = (isLocalMemSignal(signal) ||
+		// FIXME - For the local mem, always non-registered voters are inserted
+		bool isRegVoter = (!isLocalMemSignal(signal) && 
 		                   (signal->getName()!="cur_state" && voterMode==4));
 
 		if ((signal->getName()=="cur_state") ||
@@ -6619,7 +6620,8 @@ void VerilogWriter::printDeclaration(const RTLSignal *signal, bool testBench) {
 		    ((voterMode==1) && isReg) ||
 		    ((voterMode==2) && isReg && isBackward) ||
 		    ((voterMode==3) && isBackward) ||
-		    ((voterMode==4) && isReg && isBackward)) {
+		    ((voterMode==4) && isReg && isBackward) ||
+		    ((voterMode==5) && isBackward)) {
 			printTmrSignal(signal, "_v");
 			printTmrVoter(signal->getName(), lo, hi, isRegVoter);
 		}
@@ -6673,18 +6675,28 @@ void VerilogWriter::printRTL(const RTLModule *rtl) {
     if (LEGUP_CONFIG->getParameterInt("LOCAL_RAMS")) {
         Out << "// Local Rams\n";
 
-		for (int tmrIter=0; tmrIter<3; tmrIter++) {
-			useReplicaNumberForAllVariables = true;
-			currReplica = utostr(tmrIter);
+    	if (LEGUP_CONFIG->getParameterInt("TMR")) {
+			for (int tmrIter=0; tmrIter<3; tmrIter++) {
+				useReplicaNumberForAllVariables = true;
+				currReplica = utostr(tmrIter);
+        		for (RTLModule::const_ram_iterator i = rtl->local_ram_begin(),
+        		                                   e = rtl->local_ram_end();
+        		     i != e; ++i) {
+        		    RAM *R = *i;
+        		    Out << "\n";
+        		    printRamInstance(R);
+        		}
+				useReplicaNumberForAllVariables = false;
+			}
+		} else {
         	for (RTLModule::const_ram_iterator i = rtl->local_ram_begin(),
         	                                   e = rtl->local_ram_end();
         	     i != e; ++i) {
         	    RAM *R = *i;
         	    Out << "\n";
         	    printRamInstance(R);
-        	}
-			useReplicaNumberForAllVariables = false;
-		}
+			}
+        }
         Out << "\n";
     }
 

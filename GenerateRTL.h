@@ -153,6 +153,7 @@ public:
 
 	// voter
 	void updateVoterSignal(SchedulerDAG *dag);
+	void printDebugSignal(std::string chr);
 
     void scheduleOperations();
 
@@ -711,6 +712,10 @@ public:
     // different functions.  This is only relevant for debugging
     // since we need to track which instance we are debugging.
     std::vector<RTLModuleInstance *> instances;
+
+	// TMR
+	RTLSignal *getWire(RTLSignal *sig);
+	RTLSignal *getReg(RTLSignal *sig);
 };
 
 } // End legup namespace

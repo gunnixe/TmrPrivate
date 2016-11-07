@@ -27,11 +27,12 @@ Allocation* Scheduler::alloc = NULL;
 // complete
 unsigned Scheduler::getNumInstructionCycles(Instruction *instr) {
 
-	//// insert pipelined voter to phi instruction / Jeree
-	//if (LEGUP_CONFIG->getParameterInt("TMR") &&
-	//    LEGUP_CONFIG->getParameterInt("VOTER_MODE")==1 &&
-	//    isa<PHINode>(instr)) {
-	//	return 1;
+	// TMR - insert pipelined voter
+	//if (LEGUP_CONFIG->getParameterInt("TMR")) {
+	//	//if (LEGUP_CONFIG->getParameterInt("VOTER_MODE")==1 && isa<PHINode>(instr))
+	//	//	return 1;
+	//	if (isa<LoadInst>(instr))
+	//		return 2;
 	//}
 
     // store should always have 1 cycle of latency (unlike a load)
@@ -115,11 +116,11 @@ unsigned Scheduler::getNumInstructionCycles(Instruction *instr) {
               RAM *ram = alloc->getLocalRamFromInst(instr);
               if (ram && !alloc->isRAMGlobal(ram)) {
                   // local memory
-                  if (LEGUP_CONFIG->getParameterInt("TMR")) {
-                      //TMR::add 1 cycle delay for registered voter for memory input ports
-                      return ram->getLatency(alloc)+1;
-                  }
-                  else
+                  //if (LEGUP_CONFIG->getParameterInt("TMR")) {
+                  //    //TMR::add 1 cycle delay for registered voter for memory input ports
+                  //    return ram->getLatency(alloc)+1;
+                  //}
+                  //else
                       return ram->getLatency(alloc);
               } else {
                   // global memory

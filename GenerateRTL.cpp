@@ -5460,14 +5460,36 @@ RTLSignal* GenerateRTL::getOpNonConstant(State *state, Value *op) {
 		return rtl->find(wire);
 	}
 
+	if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=3) {
+		std::cerr << "(state=" << state->getName() << ")\t";
+		std::cerr << "op=" << getValueStr(op) << "\n";
+	}
+
 	RTLSignal *signal = NULL;
 	if (fromOtherState(op, state)) {
 		signal = rtl->find(reg);
 	} else {
 		signal = rtl->find(wire);
 	}
+
 	return signal;
 }
+
+RTLSignal *GenerateRTL::getWire(RTLSignal *sig) {
+	if(!sig->isReg())
+		return sig;
+
+	return sig->getDriver(0);
+}	
+
+RTLSignal *GenerateRTL::getReg(RTLSignal *sig) {
+	if(sig->isReg() || sig->getName()=="")
+		return sig;
+
+	std::cerr << "getReg: " << sig->getName() << endl;
+	std::string reg = sig->getName() + "_reg";
+	return rtl->find(reg);
+}	
 
 //NC changes... wrapper
 
@@ -5479,14 +5501,14 @@ RTLSignal *GenerateRTL::getOp(State *state, Value *op) {
 RTLSignal *GenerateRTL::getOp(State *state, Value *op, int &value) {
 	RTLSignal *ret = NULL;
 
-	//std::cout << "start-getOp - input value: " << value << std::endl;
+	//std::cerr << "start-getOp - input value: " << value << std::endl;
 
 	ConstantExpr *CE = dyn_cast<ConstantExpr>(op);
 	if (CE && CE->getOpcode() == Instruction::GetElementPtr) {
 		int gepValue = 0;
 		ret = getGEP(state, CE, gepValue);
 		value = gepValue;
-		//std::cout << "getOp - GEP - value set to: " << value << std::endl;
+		//std::cerr << "getOp - GEP - value set to: " << value << std::endl;
 	} else {
 		if (isa<GlobalVariable>(op) || isa<AllocaInst>(op)) {
 			RAM *ram = getRam(op);
@@ -5517,9 +5539,10 @@ RTLSignal *GenerateRTL::getOp(State *state, Value *op, int &value) {
 			int opConstantValue = 0;
 			ret = getOpConstant(state, c, opConstantValue);
 			value = opConstantValue;
-			//std::cout << "getOp - constant - value set to: " << value << std::endl;
+			//std::cerr << "getOp - constant - value set to: " << value << std::endl;
 		} else {
 			ret = getOpNonConstant(state, op);
+			//std::cerr << "getOp - nonConstant - value set to: " << ret->getName() << std::endl;
 
 		}
 	}
@@ -5567,6 +5590,7 @@ void GenerateRTL::generatePHICopiesForSuccessor(RTLSignal* condition,
 	for (State::const_iterator instr = Successor->begin(), ie =
 			Successor->end(); instr != ie; ++instr) {
 		Instruction *I = *instr;
+
 		if (const PHINode *phi = dyn_cast<PHINode>(I)) {
 			Value *IV = phi->getIncomingValueForBlock(incomingBB);
 			RTLWidth width(I, MBW);
@@ -5577,7 +5601,20 @@ void GenerateRTL::generatePHICopiesForSuccessor(RTLSignal* condition,
 				assert(IVinst);
 				this->time = getMetadataInt(IVinst, "legup.pipeline.avail_time");
 			}
+
 			signal = getOp(CurBlock, IV);
+			if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2) {
+				std::cerr << "Inst: " << getValueStr(I) << "\n";
+				std::cerr << "\tIncoming: " << getValueStr(IV) << "\n";
+				std::cerr << "\tsigName= " << signal->getName() << "\n";
+			}
+
+			//FIXME remove phiRegister
+			// phi registers can be removed if phi use only registered input.
+			// To make phi inputs as all registered inputs, modify the getOp()
+			// function to return always registered op
+			//RTLSignal *sigReg = getReg(signal);
+
 			RTLSignal *phiWire = rtl->addWire(verilogName(I), width);
 			RTLSignal *phiReg = rtl->addReg(verilogName(I) + "_reg", width);
 			phiWire->addCondition(condition, signal, I);
@@ -5619,6 +5656,8 @@ void GenerateRTL::generateTransition(RTLSignal *condition, State* s) {
 		trueCond->setOperand(0, condition);
 		trueCond->setOperand(1, trueBranch);
 
+		if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+			std::cerr << "---true cond---\n";
 		generatePHICopiesForSuccessor(trueCond, s, s->getTransitionState(0));
 		curState->addCondition(trueCond,
 				getStateSignal(s->getTransitionState(0)));
@@ -5631,6 +5670,8 @@ void GenerateRTL::generateTransition(RTLSignal *condition, State* s) {
 		falseCond->setOperand(0, condition);
 		falseCond->setOperand(1, falseBranch);
 
+		if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+			std::cerr << "---false cond---\n";
 		generatePHICopiesForSuccessor(falseCond, s, s->getDefaultTransition());
 		curState->addCondition(falseCond,
 				getStateSignal(s->getDefaultTransition()));
@@ -5691,12 +5732,16 @@ void GenerateRTL::generateDatapath() {
 	bool shouldConnectMemorySignals = usesPthreads
 			|| ps->functionUsesMemory(Fp->getName());
 
+	if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+		std::cerr << "\n\n# DEBUG_TMR=2 - state information\n";
 	for (FiniteStateMachine::iterator state = fsm->begin(), se = fsm->end();
 			state != se; ++state) {
 
 		//const BasicBlock *b = state->getBasicBlock();
-		//Out << indent << "/* " << b->getParent()->getName() << ": " <<
+		//errs() << indent << "/* " << b->getParent()->getName() << ": " <<
 		//    b->getName() << "*/\n";
+		if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+			std::cerr << "-----" << state->getName() << "-----\n";
 
 		RTLOp *transition;
 
@@ -5733,6 +5778,8 @@ void GenerateRTL::generateDatapath() {
 				instr != ie; ++instr) {
 
 			Instruction *I = *instr;
+
+			//std::cerr << getValueStr(I) << std::endl;
 
 			// find the verilog command for this instruction
 			this->state = state;
@@ -6274,6 +6321,39 @@ void delete_multicycle_files() {
 	first_visit = false;
 }
 
+void GenerateRTL::printDebugSignal(std::string chr) {
+	if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")<3)
+		return;
+
+	std::cerr << "\n\n# DEBUG_TMR=3 - print signals and drivers - " << chr << "\n";
+	for (RTLModule::const_signal_iterator i = rtl->signals_begin(),
+	                                      e = rtl->signals_end();
+	     i != e; ++i) {
+		const RTLSignal *s = *i;
+		if (s->getName()=="cur_state")
+			continue;
+		std::cerr << "\t" << s->getName() << " <- ";
+		for (unsigned int j=0; j<s->getNumDrivers(); j++) {
+			const RTLSignal *d = s->getDriver(j);
+			if (d->isOp()) {
+				const RTLOp* op = (const RTLOp*)d;
+				for (unsigned int k=0; k<op->getNumOperands(); k++) {
+					if (op->getOperand(k)->getValue().empty())
+						std::cerr << op->getOperand(k)->getName() << "/";
+					else
+						std::cerr << "(" << op->getOperand(k)->getValue() << ")/";
+				}
+			} else {
+				if (d->getValue().empty())
+					std::cerr << d->getName() << ", ";
+				else
+					std::cerr << "(" << d->getValue() << "), ";
+			}
+		}
+		std::cerr << "\n";
+	}
+}
+
 RTLModule* GenerateRTL::generateRTL(MinimizeBitwidth *_MBW) {
 
 	EXPLICIT_LPM_MULTS = LEGUP_CONFIG->getParameterInt("EXPLICIT_LPM_MULTS");
@@ -6340,7 +6420,10 @@ RTLModule* GenerateRTL::generateRTL(MinimizeBitwidth *_MBW) {
         createMemoryReaddataStorageForParallelFunction();
     }
 
+	printDebugSignal("before");
 	generateDatapath();
+	printDebugSignal("after");
+
 	updateRTLWithPatterns();
 	shareRegistersFromBinding();
 	delete Patterns;
@@ -6422,8 +6505,8 @@ RTLModule* GenerateRTL::generateRTL(MinimizeBitwidth *_MBW) {
 
 void GenerateRTL::updateVoterSignal(SchedulerDAG *dag) {
 
-	// Debug
-	std::cerr << "---- Backward signal ----" << endl;
+	if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=1)
+		std::cerr << "\n\n# DEBUG_TMR=2 - Backward signal\n";
 
 	for (inst_iterator i = inst_begin(Fp), e = inst_end(Fp); i != e; ++i) {
         Instruction *I = &*i;
@@ -6435,8 +6518,8 @@ void GenerateRTL::updateVoterSignal(SchedulerDAG *dag) {
 			sig_wire->setBackward();
 			sig_reg->setBackward();
 
-			// Debug
-			std::cerr << "    " << getValueStr(I) << endl;
+			if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=1)
+				std::cerr << "    " << getValueStr(I) << endl;
 		}
 
   		//for (InstructionNode::iterator i = iNode->back_use_begin(),

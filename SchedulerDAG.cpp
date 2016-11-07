@@ -239,7 +239,8 @@ void SchedulerDAG::updateDAGwithInst(Instruction *instr) {
     std::string opName = LEGUP_CONFIG->getOpNameFromInst(instr, alloc);
 	//if (isa<PHINode>(instr)) { // add voter delay to 'phi' instruction
 	if (LEGUP_CONFIG->getParameterInt("TMR") &&
-	   LEGUP_CONFIG->getParameterInt("VOTER_MODE")==4 &&
+	   (LEGUP_CONFIG->getParameterInt("VOTER_MODE")==4 ||
+	   LEGUP_CONFIG->getParameterInt("VOTER_MODE")==5) &&
 	   iNode->getBackward()) { // add voter delay to backward edges
 		iNode->setAtMaxDelay();
     } else if (opName.empty() || isMem(instr)) {
@@ -317,7 +318,8 @@ void SchedulerDAG::insertSyncVoter(const BasicBlock* pred, const BasicBlock* suc
 	for (BasicBlock::const_iterator si = succ->begin();
 	     si != succ->end(); si++) {
 		const Instruction *i2 = si;
-		std::cerr << "    INSTRUCTION:" << getValueStr(i2) << endl;
+		if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+			std::cerr << "    INSTRUCTION:" << getValueStr(i2) << endl;
    		for (User::const_op_iterator i = i2->op_begin(), e = i2->op_end(); i != e;
    		     ++i) {
 			const Instruction *use = dyn_cast<Instruction>(*i);
@@ -329,14 +331,16 @@ void SchedulerDAG::insertSyncVoter(const BasicBlock* pred, const BasicBlock* suc
 			     pi != pred->end(); pi++) {
 				const Instruction *i1 = pi;
 				if (foundBackwardDependency(use, i1, pred, succ, siIdx, piIdx)) {
-					std::cerr << "      <-" << getValueStr(i1) << endl;
+					if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+						std::cerr << "      <-" << getValueStr(i1) << endl;
 					//add backward information to InstructionNode
 					InstructionNode* iNode = getInstructionNode(const_cast<Instruction*>(i2));
 					InstructionNode* depNode = getInstructionNode(const_cast<Instruction*>(i1));
        				iNode->addBackDepInst(depNode);
        				depNode->addBackUseInst(iNode);
 
-					if (LEGUP_CONFIG->getParameterInt("VOTER_MODE")==3)
+					if (LEGUP_CONFIG->getParameterInt("VOTER_MODE")==3 ||
+					    LEGUP_CONFIG->getParameterInt("VOTER_MODE")==5)
 						depNode->setBackward(); //def
 					else
 						iNode->setBackward(); //use(phi)
@@ -355,12 +359,14 @@ void SchedulerDAG::insertSyncVoter(Function &F) {
 	FindFunctionBackedges(F, Edges);
 
 	// add voter to the instruction which has backward edges
-	std::cerr << "------- Backward Edges ------------" << endl;
+	if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+		std::cerr << "\n\n# DEBUG_TMR=2 - Backward Edges\n";
 	for (unsigned i = 0, e = Edges.size(); i != e; ++i) {
 		const BasicBlock *succ = Edges[i].second;
 		const BasicBlock *pred = Edges[i].first;
 
-		std::cerr << "  [" << i << "] " << getLabel(succ) << "<-" << getLabel(pred) << endl;
+		if (LEGUP_CONFIG->getParameterInt("DEBUG_TMR")>=2)
+			std::cerr << "  [" << i << "] " << getLabel(succ) << "<-" << getLabel(pred) << endl;
 		insertSyncVoter(pred, succ);
 	}
 }

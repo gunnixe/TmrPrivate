@@ -23,7 +23,7 @@ static LegupConfig LegupConfigObj;
 
 LegupConfig *LEGUP_CONFIG = &LegupConfigObj;
 
-#define NUM_PARAMETERS 128
+#define NUM_PARAMETERS 129
 const std::string validParameters[NUM_PARAMETERS] = {
     "ALIAS_ANALYSIS", "CLOCK_PERIOD", "DEBUG_MODULO_DEPENDENT",
     "DEBUG_MODULO_TABLE", "DEBUG_PERTURBATION", "DEBUG_VERIFY_INCR_SDC",
@@ -55,7 +55,11 @@ const std::string validParameters[NUM_PARAMETERS] = {
     "SERIAL_DIVIDER", "SKIP_ELEM_CYCLES", "TEST_WAITREQUEST",
     "TIMING_NO_IGNORE_GETELEMENTPTR_AND_STORE", "TIMING_NUM_PATHS", "NO_ROMS",
     "CASE_FSM", "CASEX",
-    "TMR", "VOTER_MODE", // Added for TMR
+
+	// Added for TMR
+    "TMR", "VOTER_MODE", "DEBUG_TMR",
+
+	// DEBUG
     "INSPECT_DEBUG",                   // Inspect debugger: Populate database.
     "INSPECT_ONCHIP_BUG_DETECT_DEBUG", // Inspect debugger: on-chip bug
                                        // detection

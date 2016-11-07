@@ -172,7 +172,7 @@ bool RTLSignal::driveFromVoter() const {
 			return (isReg());
 		else if (voterMode==2 || voterMode==4)
 			return (isReg() && getBackward()); //isPhi()));
-		else if (voterMode==3)
+		else if (voterMode==3 || voterMode==5)
 			return (getBackward());
 	}
 	return false;
